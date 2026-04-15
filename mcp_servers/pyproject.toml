@@ -23,6 +23,7 @@ mcp-bitbucket  = "mcp_bitbucket.server:main"
 mcp-sonarqube  = "mcp_sonarqube.server:main"
 mcp-coverity   = "mcp_coverity.server:main"
 mcp-blackduck  = "mcp_blackduck.server:main"
+mcp-gateway    = "mcp_gateway.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = [
@@ -34,4 +35,5 @@ packages = [
     "mcp_sonarqube",
     "mcp_coverity",
     "mcp_blackduck",
+    "mcp_gateway",
 ]

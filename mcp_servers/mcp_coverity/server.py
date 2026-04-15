@@ -17,7 +17,7 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from shared.utils import err, ok, require_env
+from shared.utils import err, ok, require_env, run_server
 
 # ---------------------------------------------------------------------------
 # Server bootstrap
@@ -406,7 +406,7 @@ async def coverity_get_snapshots(
 
 def main() -> None:
     _init()
-    mcp.run()
+    run_server(mcp, default_port=8006)
 
 
 if __name__ == "__main__":

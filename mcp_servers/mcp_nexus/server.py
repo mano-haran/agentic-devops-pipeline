@@ -17,7 +17,7 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from shared.utils import err, ok, require_env, run_cmd
+from shared.utils import err, ok, require_env, run_cmd, run_server
 
 # ---------------------------------------------------------------------------
 # Server bootstrap
@@ -384,7 +384,7 @@ async def nexus_list_repositories() -> str:
 
 def main() -> None:
     _init()
-    mcp.run()
+    run_server(mcp, default_port=8003)
 
 
 if __name__ == "__main__":

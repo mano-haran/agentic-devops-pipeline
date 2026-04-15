@@ -18,11 +18,9 @@ Claude Code CLI — Orchestrator Agent
         ├── Guardian  (Coverity SAST + Black Duck SCA)
         └── Deployer  (Helm → OpenShift SIT/UAT/PROD/DR)
         │
-        └── MCP Tool Layer (7 Python servers, launched per pipeline)
-             ├── Jira DC          ├── Jenkins
-             ├── Bitbucket DC     ├── SonarQube
-             ├── Nexus            ├── Coverity
-             └── Black Duck
+        └── MCP Tool Layer
+             ├── stdio mode (per-pipeline): 7 individual servers
+             └── sse mode  (hosted):        1 gateway server, 1 port, all tools
 ```
 
 ## Repository Structure
@@ -33,7 +31,8 @@ agentic-devops-pipeline/
 │   └── settings.json          # MCP server registrations for Claude Code
 ├── mcp_servers/
 │   ├── pyproject.toml         # Python package + dependencies
-│   ├── shared/utils.py        # Shared auth and HTTP helpers
+│   ├── shared/utils.py        # Shared auth, HTTP helpers, transport selector
+│   ├── mcp_gateway/server.py  # Unified gateway — all tools, single port (SSE)
 │   ├── mcp_jira/server.py
 │   ├── mcp_jenkins/server.py
 │   ├── mcp_nexus/server.py
@@ -217,6 +216,9 @@ Copy `.env.example` to `.env`. The `.env` file is gitignored and must never be c
 | `NEXUS_BASE_URL`, `NEXUS_USERNAME`, `NEXUS_PASSWORD`, `NEXUS_DOCKER_HOST`, `NEXUS_DOCKER_REPO` | mcp_nexus |
 | `COVERITY_BASE_URL`, `COVERITY_USERNAME`, `COVERITY_API_TOKEN` | mcp_coverity |
 | `BLACKDUCK_BASE_URL`, `BLACKDUCK_API_TOKEN` | mcp_blackduck |
+| `MCP_TRANSPORT` | All servers — `stdio` (default) or `sse` |
+| `MCP_HOST` | SSE mode — bind address (default: `127.0.0.1`) |
+| `MCP_PORT` | SSE mode — gateway port (default: `8000`) |
 
 ---
 
@@ -230,9 +232,10 @@ cd agentic-devops-pipeline/mcp_servers
 
 ### List all tools in a server
 
-`--list-tools` connects to the server, calls `list_tools` via the MCP protocol, and prints each tool's **full input schema** — parameter names, types, required/optional status, defaults, and descriptions. This is the authoritative source of truth for what each tool accepts.
+`--list-tools` connects to the server over stdio, calls `list_tools` via the MCP protocol, and prints each tool's **full input schema** — parameter names, types, required/optional status, defaults, and descriptions. This is the authoritative source of truth for what each tool accepts.
 
 ```bash
+python test_mcp_client.py mcp_gateway.server --list-tools
 python test_mcp_client.py mcp_jira.server --list-tools
 python test_mcp_client.py mcp_jenkins.server --list-tools
 python test_mcp_client.py mcp_nexus.server --list-tools
@@ -241,6 +244,8 @@ python test_mcp_client.py mcp_sonarqube.server --list-tools
 python test_mcp_client.py mcp_coverity.server --list-tools
 python test_mcp_client.py mcp_blackduck.server --list-tools
 ```
+
+Use `mcp_gateway.server --list-tools` to see all 47 tools in one output.
 
 Example output for `mcp_jira.server --list-tools`:
 ```
@@ -387,10 +392,17 @@ The test runner exits non-zero on any failure, making it safe to run as a Jenkin
 
 ---
 
-## Claude Code MCP Registration
+## MCP Transport Modes
 
-The `.claude/settings.json` file registers all 7 MCP servers with Claude Code. Each server is launched as a subprocess per pipeline session, inheriting environment variables from the Jenkins shell.
+The servers support two transport modes. **Use one, not both.** The mode is selected via the `MCP_TRANSPORT` environment variable.
 
+---
+
+### stdio mode — recommended for production pipelines
+
+Claude Code spawns each server as a subprocess, communicating over stdin/stdout. Credentials flow in per-session via Jenkins environment injection — the correct model for isolated, per-pipeline execution.
+
+**`.claude/settings.json`:**
 ```json
 {
   "mcpServers": {
@@ -405,7 +417,64 @@ The `.claude/settings.json` file registers all 7 MCP servers with Claude Code. E
 }
 ```
 
+No `MCP_TRANSPORT` variable needed — `stdio` is the default.
+
 Update `cwd` to match the actual deployment path on the RHEL VM if different from `/opt/smart-devops`.
+
+---
+
+### SSE mode — for standalone testing or shared team server
+
+The **gateway server** (`mcp_gateway`) aggregates all 7 servers into one FastMCP instance and serves all 47 tools over a single HTTP endpoint. Claude Code connects via URL instead of spawning subprocesses.
+
+**Is a single port recommended?** Yes — one unified server is the standard SSE pattern. It gives you one URL to configure, one port to firewall, and one process to monitor. Per-server separate ports only make sense when you need to give different clients access to different tool subsets, which is not required here.
+
+**Start the gateway:**
+```bash
+# Foreground (for testing)
+MCP_TRANSPORT=sse MCP_PORT=8000 python -m mcp_gateway.server
+
+# Background with nohup
+MCP_TRANSPORT=sse MCP_PORT=8000 nohup python -m mcp_gateway.server > /tmp/mcp-gateway.log 2>&1 &
+
+# Verify it's running
+curl http://127.0.0.1:8000/sse
+```
+
+**`.claude/settings.json` for SSE mode** (replace the `mcpServers` block):
+```json
+{
+  "mcpServers": {
+    "smart-devops": {
+      "url": "http://127.0.0.1:8000/sse"
+    }
+  }
+}
+```
+
+**Test the gateway via the MCP Inspector UI** (interactive browser tool):
+```bash
+mcp dev mcp_servers/mcp_gateway/server.py
+# Opens http://localhost:5173 — call any tool interactively
+```
+
+**Test the gateway via the CLI test client** (stdio, no HTTP server needed):
+```bash
+python test_mcp_client.py mcp_gateway.server --list-tools
+python test_mcp_client.py mcp_gateway.server jira_get_issue issue_key=PROJ-123
+python test_mcp_client.py mcp_gateway.server sonar_get_quality_gate_status project_key=com.company:my-service
+```
+
+**Transport comparison:**
+
+| | stdio | SSE (gateway) |
+|---|---|---|
+| Claude Code config | `command` (7 entries) | `url` (1 entry) |
+| Server lifecycle | Claude Code spawns/kills | Persistent daemon |
+| Credential injection | Per-session via Jenkins env | At daemon startup |
+| Pipeline isolation | Each build gets own process | Shared across all sessions |
+| Port management | None needed | 1 port (default 8000) |
+| Best for | Production CI/CD pipelines | Local testing, shared teams |
 
 ---
 

@@ -1,5 +1,18 @@
 {
+  "_comment_transport": [
+    "Two transport modes are supported. Use ONE block below, not both.",
+    "",
+    "STDIO MODE (default — recommended for Jenkins-triggered pipelines):",
+    "  Claude Code spawns each server as a subprocess. Credentials are",
+    "  injected per-session by Jenkins. Use the 'mcpServers' block below.",
+    "",
+    "SSE MODE (for standalone testing or shared team server):",
+    "  Run: MCP_TRANSPORT=sse python -m mcp_gateway.server",
+    "  Then replace the 'mcpServers' block with the 'mcpServersUrl' block below."
+  ],
+
   "mcpServers": {
+    "_comment": "STDIO MODE — active by default. Remove this block when using SSE.",
     "jira": {
       "command": "python",
       "args": ["-m", "mcp_jira.server"],
@@ -34,6 +47,16 @@
       "command": "python",
       "args": ["-m", "mcp_blackduck.server"],
       "cwd": "/opt/smart-devops/mcp_servers"
+    }
+  },
+
+  "_mcpServersUrl_comment": [
+    "SSE MODE — replace 'mcpServers' above with this block (rename by removing the leading underscore).",
+    "Start the gateway first: MCP_TRANSPORT=sse MCP_PORT=8000 python -m mcp_gateway.server"
+  ],
+  "_mcpServersUrl": {
+    "smart-devops": {
+      "url": "http://127.0.0.1:8000/sse"
     }
   }
 }

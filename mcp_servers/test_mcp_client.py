@@ -151,6 +151,7 @@ def print_usage() -> None:
     print(__doc__)
     print("\nAvailable server modules:")
     servers = [
+        ("mcp_gateway.server",   "All tools — unified gateway (use for SSE mode testing)"),
         ("mcp_jira.server",      "Jira Data Center"),
         ("mcp_jenkins.server",   "Jenkins"),
         ("mcp_nexus.server",     "Nexus Repository Manager"),

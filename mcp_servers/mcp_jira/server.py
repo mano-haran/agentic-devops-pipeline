@@ -16,7 +16,7 @@ from mcp.server.fastmcp import FastMCP
 
 # Allow imports from parent directory when run directly
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from shared.utils import err, ok, require_env
+from shared.utils import err, ok, require_env, run_server
 
 # ---------------------------------------------------------------------------
 # Server bootstrap
@@ -388,7 +388,7 @@ async def jira_get_project_versions(project_key: str) -> str:
 
 def main() -> None:
     _init()
-    mcp.run()
+    run_server(mcp, default_port=8001)
 
 
 if __name__ == "__main__":

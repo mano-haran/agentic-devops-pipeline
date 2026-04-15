@@ -67,3 +67,29 @@ def http_headers_basic(username: str, token: str) -> dict[str, str]:
 
     creds = base64.b64encode(f"{username}:{token}".encode()).decode()
     return {"Authorization": f"Basic {creds}", "Content-Type": "application/json"}
+
+
+def run_server(mcp_instance: Any, default_port: int) -> None:
+    """
+    Start an MCP server in either stdio or SSE mode.
+
+    Transport is selected via the MCP_TRANSPORT environment variable:
+      stdio (default) — Claude Code subprocess model; communicates over stdin/stdout.
+      sse             — Hosted HTTP daemon; Claude Code connects via URL.
+
+    SSE env vars:
+      MCP_HOST  — bind address (default: 127.0.0.1)
+      MCP_PORT  — port override (default: server-specific default_port)
+    """
+    transport = os.environ.get("MCP_TRANSPORT", "stdio").lower()
+
+    if transport == "sse":
+        host = os.environ.get("MCP_HOST", "127.0.0.1")
+        port = int(os.environ.get("MCP_PORT", str(default_port)))
+        print(
+            f"[MCP] Starting in SSE mode on http://{host}:{port}/sse",
+            file=sys.stderr,
+        )
+        mcp_instance.run(transport="sse", host=host, port=port)
+    else:
+        mcp_instance.run(transport="stdio")
