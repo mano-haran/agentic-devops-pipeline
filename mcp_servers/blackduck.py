@@ -11,19 +11,10 @@ for a short-lived bearer token on first use, then reused within the session.
 API reference: Black Duck REST API v6 (Black Duck 2022.2+)
 """
 
-import os
-import sys
-from functools import lru_cache
-
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from shared.utils import err, ok, require_env, run_server
-
-# ---------------------------------------------------------------------------
-# Server bootstrap
-# ---------------------------------------------------------------------------
+from mcp_servers.shared import err, ok, require_env, run_server
 
 mcp = FastMCP("blackduck")
 
@@ -88,9 +79,8 @@ async def _find_version(
     version_name: str,
 ) -> dict | None:
     """Find a project version by exact name match."""
-    versions_url = f"{project_href}/versions"
     r = await client.get(
-        versions_url,
+        f"{project_href}/versions",
         headers={**_bd_headers(bearer), "Accept": "application/vnd.blackducksoftware.project-detail-5+json"},
         params={"q": f"versionName:{version_name}", "limit": 10},
         timeout=30,
@@ -110,7 +100,7 @@ async def _find_version(
 
 
 @mcp.tool()
-async def blackduck_list_projects(search: str = "", limit: int = 50) -> str:
+async def list_projects(search: str = "", limit: int = 50) -> str:
     """
     List Black Duck projects with optional name search filter.
     Use this to find exact project names and their metadata.
@@ -136,24 +126,22 @@ async def blackduck_list_projects(search: str = "", limit: int = 50) -> str:
         return err("Failed to list Black Duck projects", r.text)
 
     items = r.json().get("items", [])
-    return ok(
-        {
-            "total": len(items),
-            "projects": [
-                {
-                    "name": p["name"],
-                    "description": p.get("description", ""),
-                    "created_at": p.get("createdAt", ""),
-                    "href": p.get("_meta", {}).get("href", ""),
-                }
-                for p in items
-            ],
-        }
-    )
+    return ok({
+        "total": len(items),
+        "projects": [
+            {
+                "name": p["name"],
+                "description": p.get("description", ""),
+                "created_at": p.get("createdAt", ""),
+                "href": p.get("_meta", {}).get("href", ""),
+            }
+            for p in items
+        ],
+    })
 
 
 @mcp.tool()
-async def blackduck_list_project_versions(project_name: str, limit: int = 20) -> str:
+async def list_project_versions(project_name: str, limit: int = 20) -> str:
     """
     List versions (scans) for a Black Duck project.
 
@@ -179,26 +167,24 @@ async def blackduck_list_project_versions(project_name: str, limit: int = 20) ->
         return err(f"Failed to list versions for '{project_name}'", r.text)
 
     items = r.json().get("items", [])
-    return ok(
-        {
-            "project": project_name,
-            "total": len(items),
-            "versions": [
-                {
-                    "name": v["versionName"],
-                    "phase": v.get("phase", ""),
-                    "distribution": v.get("distribution", ""),
-                    "created_at": v.get("createdAt", ""),
-                    "href": v.get("_meta", {}).get("href", ""),
-                }
-                for v in items
-            ],
-        }
-    )
+    return ok({
+        "project": project_name,
+        "total": len(items),
+        "versions": [
+            {
+                "name": v["versionName"],
+                "phase": v.get("phase", ""),
+                "distribution": v.get("distribution", ""),
+                "created_at": v.get("createdAt", ""),
+                "href": v.get("_meta", {}).get("href", ""),
+            }
+            for v in items
+        ],
+    })
 
 
 @mcp.tool()
-async def blackduck_get_vulnerabilities(
+async def get_vulnerabilities(
     project_name: str,
     version_name: str,
     min_cvss_score: float = 0.0,
@@ -246,12 +232,12 @@ async def blackduck_get_vulnerabilities(
 
     vulns = []
     for item in items:
-        for vuln in item.get("vulnerabilityWithRemediation", [{}]) if isinstance(
-            item.get("vulnerabilityWithRemediation"), list
-        ) else [item.get("vulnerabilityWithRemediation", {})]:
-            cvss3 = vuln.get("overallScore", vuln.get("cvss3Score", 0.0)) or 0.0
-            cvss2 = vuln.get("baseScore", 0.0) or 0.0
-            score = max(float(cvss3), float(cvss2))
+        vwr_raw = item.get("vulnerabilityWithRemediation", {})
+        vwr_list = vwr_raw if isinstance(vwr_raw, list) else [vwr_raw]
+        for vuln in vwr_list:
+            cvss3 = float(vuln.get("overallScore", vuln.get("cvss3Score", 0.0)) or 0.0)
+            cvss2 = float(vuln.get("baseScore", 0.0) or 0.0)
+            score = max(cvss3, cvss2)
 
             if score < min_cvss_score:
                 continue
@@ -260,55 +246,50 @@ async def blackduck_get_vulnerabilities(
             if not remediated and status in ("REMEDIATED", "IGNORED", "PATCHED"):
                 continue
 
-            vulns.append(
-                {
-                    "vulnerability_name": vuln.get("vulnerabilityName", ""),
-                    "cvss3_score": cvss3,
-                    "cvss2_score": cvss2,
-                    "severity": vuln.get("severity", vuln.get("baseScore", "")),
-                    "component_name": item.get("componentName", ""),
-                    "component_version": item.get("componentVersionName", ""),
-                    "remediation_status": status,
-                    "remediation_created_at": vuln.get("remediationCreatedAt", ""),
-                    "description": vuln.get("description", ""),
-                    "cwe_id": vuln.get("cweId", ""),
-                    "published_date": vuln.get("publishedDate", ""),
-                    "updated_date": vuln.get("updatedDate", ""),
-                }
-            )
+            vulns.append({
+                "vulnerability_name": vuln.get("vulnerabilityName", ""),
+                "cvss3_score": cvss3,
+                "cvss2_score": cvss2,
+                "severity": vuln.get("severity", ""),
+                "component_name": item.get("componentName", ""),
+                "component_version": item.get("componentVersionName", ""),
+                "remediation_status": status,
+                "remediation_created_at": vuln.get("remediationCreatedAt", ""),
+                "description": vuln.get("description", ""),
+                "cwe_id": vuln.get("cweId", ""),
+                "published_date": vuln.get("publishedDate", ""),
+                "updated_date": vuln.get("updatedDate", ""),
+            })
 
-    # Sort by CVSS score descending
     vulns.sort(key=lambda v: v["cvss3_score"], reverse=True)
 
     critical = [v for v in vulns if v["cvss3_score"] >= CVSS_CRITICAL_THRESHOLD]
     high = [v for v in vulns if CVSS_HIGH_THRESHOLD <= v["cvss3_score"] < CVSS_CRITICAL_THRESHOLD]
     gate_passed = len(critical) == 0 and len(high) == 0
 
-    return ok(
-        {
-            "project_name": project_name,
-            "version_name": version_name,
-            "total_vulnerabilities": len(vulns),
-            "pipeline_gate": {
-                "passed": gate_passed,
-                "critical_count": len(critical),
-                "high_count": len(high),
-                "thresholds": {
-                    "critical": f"CVSS >= {CVSS_CRITICAL_THRESHOLD} → block",
-                    "high": f"CVSS >= {CVSS_HIGH_THRESHOLD} → block",
-                },
-                "blocking_reason": (
-                    None if gate_passed else
-                    f"{len(critical)} critical and {len(high)} high severity vulnerabilities found"
-                ),
+    return ok({
+        "project_name": project_name,
+        "version_name": version_name,
+        "total_vulnerabilities": len(vulns),
+        "pipeline_gate": {
+            "passed": gate_passed,
+            "critical_count": len(critical),
+            "high_count": len(high),
+            "thresholds": {
+                "critical": f"CVSS >= {CVSS_CRITICAL_THRESHOLD} → block",
+                "high": f"CVSS >= {CVSS_HIGH_THRESHOLD} → block",
             },
-            "vulnerabilities": vulns,
-        }
-    )
+            "blocking_reason": (
+                None if gate_passed else
+                f"{len(critical)} critical and {len(high)} high severity vulnerabilities found"
+            ),
+        },
+        "vulnerabilities": vulns,
+    })
 
 
 @mcp.tool()
-async def blackduck_get_vulnerability_details(
+async def get_vulnerability_details(
     project_name: str,
     version_name: str,
     vulnerability_name: str,
@@ -325,7 +306,6 @@ async def blackduck_get_vulnerability_details(
     async with httpx.AsyncClient(verify=False) as client:
         bearer = await _get_bearer_token(client)
 
-        # Get vulnerability details from the BD vulnerability database
         r = await client.get(
             f"{BASE_URL}/api/vulnerabilities/{vulnerability_name}",
             headers={**_bd_headers(bearer),
@@ -337,33 +317,31 @@ async def blackduck_get_vulnerability_details(
         return err(f"Vulnerability '{vulnerability_name}' not found", r.text)
 
     v = r.json()
-    return ok(
-        {
-            "name": v.get("name", vulnerability_name),
-            "description": v.get("description", ""),
-            "published_date": v.get("publishedDate", ""),
-            "updated_date": v.get("updatedDate", ""),
-            "cvss3": {
-                "score": v.get("cvss3", {}).get("baseScore"),
-                "vector": v.get("cvss3", {}).get("vector"),
-                "severity": v.get("cvss3", {}).get("severity"),
-            },
-            "cvss2": {
-                "score": v.get("cvss2", {}).get("baseScore"),
-                "vector": v.get("cvss2", {}).get("vector"),
-                "severity": v.get("cvss2", {}).get("severity"),
-            },
-            "cwe_id": v.get("cweId", ""),
-            "solution": v.get("solution", ""),
-            "workaround": v.get("workaround", ""),
-            "references": [ref.get("url", "") for ref in v.get("references", [])],
-            "source": v.get("source", ""),
-        }
-    )
+    return ok({
+        "name": v.get("name", vulnerability_name),
+        "description": v.get("description", ""),
+        "published_date": v.get("publishedDate", ""),
+        "updated_date": v.get("updatedDate", ""),
+        "cvss3": {
+            "score": v.get("cvss3", {}).get("baseScore"),
+            "vector": v.get("cvss3", {}).get("vector"),
+            "severity": v.get("cvss3", {}).get("severity"),
+        },
+        "cvss2": {
+            "score": v.get("cvss2", {}).get("baseScore"),
+            "vector": v.get("cvss2", {}).get("vector"),
+            "severity": v.get("cvss2", {}).get("severity"),
+        },
+        "cwe_id": v.get("cweId", ""),
+        "solution": v.get("solution", ""),
+        "workaround": v.get("workaround", ""),
+        "references": [ref.get("url", "") for ref in v.get("references", [])],
+        "source": v.get("source", ""),
+    })
 
 
 @mcp.tool()
-async def blackduck_get_policy_violations(
+async def get_policy_violations(
     project_name: str,
     version_name: str,
 ) -> str:
@@ -390,7 +368,6 @@ async def blackduck_get_policy_violations(
 
         version_href = version["_meta"]["href"]
 
-        # Get policy status summary
         policy_r = await client.get(
             f"{version_href}/policy-status",
             headers={**_bd_headers(bearer),
@@ -398,7 +375,6 @@ async def blackduck_get_policy_violations(
             timeout=30,
         )
 
-        # Get component-level violations
         components_r = await client.get(
             f"{version_href}/components",
             headers={**_bd_headers(bearer),
@@ -410,33 +386,31 @@ async def blackduck_get_policy_violations(
     policy_status = policy_r.json() if policy_r.status_code == 200 else {}
     components = components_r.json().get("items", []) if components_r.status_code == 200 else []
 
-    return ok(
-        {
-            "project_name": project_name,
-            "version_name": version_name,
-            "overall_policy_status": policy_status.get("overallStatus", "UNKNOWN"),
-            "in_violation": policy_status.get("overallStatus") == "IN_VIOLATION",
-            "components_in_violation": len(components),
-            "violated_components": [
-                {
-                    "component_name": c.get("componentName", ""),
-                    "component_version": c.get("componentVersionName", ""),
-                    "license": c.get("licenses", [{}])[0].get("licenseName", "") if c.get("licenses") else "",
-                    "policy_status": c.get("policyStatus", ""),
-                    "approval_status": c.get("approvalStatus", ""),
-                    "violated_policy_names": [
-                        p.get("policy", {}).get("name", "")
-                        for p in c.get("policyViolations", [])
-                    ],
-                }
-                for c in components
-            ],
-        }
-    )
+    return ok({
+        "project_name": project_name,
+        "version_name": version_name,
+        "overall_policy_status": policy_status.get("overallStatus", "UNKNOWN"),
+        "in_violation": policy_status.get("overallStatus") == "IN_VIOLATION",
+        "components_in_violation": len(components),
+        "violated_components": [
+            {
+                "component_name": c.get("componentName", ""),
+                "component_version": c.get("componentVersionName", ""),
+                "license": c.get("licenses", [{}])[0].get("licenseName", "") if c.get("licenses") else "",
+                "policy_status": c.get("policyStatus", ""),
+                "approval_status": c.get("approvalStatus", ""),
+                "violated_policy_names": [
+                    p.get("policy", {}).get("name", "")
+                    for p in c.get("policyViolations", [])
+                ],
+            }
+            for c in components
+        ],
+    })
 
 
 @mcp.tool()
-async def blackduck_get_components(
+async def get_components(
     project_name: str,
     version_name: str,
     limit: int = 200,
@@ -477,29 +451,27 @@ async def blackduck_get_components(
 
     items = r.json().get("items", [])
 
-    return ok(
-        {
-            "project_name": project_name,
-            "version_name": version_name,
-            "total_components": len(items),
-            "components": [
-                {
-                    "name": c.get("componentName", ""),
-                    "version": c.get("componentVersionName", ""),
-                    "licenses": [lic.get("licenseName", "") for lic in c.get("licenses", [])],
-                    "policy_status": c.get("policyStatus", "NOT_IN_VIOLATION"),
-                    "review_status": c.get("reviewStatus", ""),
-                    "usages": c.get("usages", []),
-                    "match_types": c.get("matchTypes", []),
-                }
-                for c in items
-            ],
-        }
-    )
+    return ok({
+        "project_name": project_name,
+        "version_name": version_name,
+        "total_components": len(items),
+        "components": [
+            {
+                "name": c.get("componentName", ""),
+                "version": c.get("componentVersionName", ""),
+                "licenses": [lic.get("licenseName", "") for lic in c.get("licenses", [])],
+                "policy_status": c.get("policyStatus", "NOT_IN_VIOLATION"),
+                "review_status": c.get("reviewStatus", ""),
+                "usages": c.get("usages", []),
+                "match_types": c.get("matchTypes", []),
+            }
+            for c in items
+        ],
+    })
 
 
 @mcp.tool()
-async def blackduck_get_scan_summary(
+async def get_scan_summary(
     project_name: str,
     version_name: str,
 ) -> str:
@@ -578,28 +550,26 @@ async def blackduck_get_scan_summary(
     if policy_violated:
         blocking_reasons.append("Open-source policy violations detected")
 
-    return ok(
-        {
-            "project_name": project_name,
-            "version_name": version_name,
-            "verdict": "PASSED" if gate_passed else "FAILED",
-            "gate_passed": gate_passed,
-            "blocking_reasons": blocking_reasons,
-            "vulnerability_summary": {
-                "critical": critical,
-                "high": high,
-                "medium": medium,
-                "low": low,
-                "total": critical + high + medium + low,
-            },
-            "policy_status": policy_status.get("overallStatus", "UNKNOWN"),
-            "thresholds": {
-                "critical_cvss": f">= {CVSS_CRITICAL_THRESHOLD}",
-                "high_cvss": f">= {CVSS_HIGH_THRESHOLD}",
-                "policy_violations": "block on IN_VIOLATION",
-            },
-        }
-    )
+    return ok({
+        "project_name": project_name,
+        "version_name": version_name,
+        "verdict": "PASSED" if gate_passed else "FAILED",
+        "gate_passed": gate_passed,
+        "blocking_reasons": blocking_reasons,
+        "vulnerability_summary": {
+            "critical": critical,
+            "high": high,
+            "medium": medium,
+            "low": low,
+            "total": critical + high + medium + low,
+        },
+        "policy_status": policy_status.get("overallStatus", "UNKNOWN"),
+        "thresholds": {
+            "critical_cvss": f">= {CVSS_CRITICAL_THRESHOLD}",
+            "high_cvss": f">= {CVSS_HIGH_THRESHOLD}",
+            "policy_violations": "block on IN_VIOLATION",
+        },
+    })
 
 
 # ---------------------------------------------------------------------------

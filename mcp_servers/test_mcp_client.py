@@ -6,9 +6,9 @@ Usage:
   python test_mcp_client.py <server_module> <tool_name> [key=value ...]
 
 Examples:
-  python test_mcp_client.py mcp_jira.server jira_get_issue issue_key=PROJ-123
-  python test_mcp_client.py mcp_sonarqube.server sonar_get_quality_gate_status project_key=com.company:app branch=release/1.2.0
-  python test_mcp_client.py mcp_jenkins.server jenkins_get_job_info job_name=smart-devops/build-app
+  python test_mcp_client.py mcp_servers.jira get_issue issue_key=PROJ-123
+  python test_mcp_client.py mcp_servers.sonarqube get_quality_gate_status project_key=com.company:app branch=release/1.2.0
+  python test_mcp_client.py mcp_servers.jenkins get_job_info job_name=smart-devops/build-app
 
 The client reads environment variables from .env in the parent directory (if present).
 """
@@ -151,20 +151,20 @@ def print_usage() -> None:
     print(__doc__)
     print("\nAvailable server modules:")
     servers = [
-        ("mcp_gateway.server",   "All tools — unified gateway (use for SSE mode testing)"),
-        ("mcp_jira.server",      "Jira Data Center"),
-        ("mcp_jenkins.server",   "Jenkins"),
-        ("mcp_nexus.server",     "Nexus Repository Manager"),
-        ("mcp_bitbucket.server", "Bitbucket Data Center"),
-        ("mcp_sonarqube.server", "SonarQube"),
-        ("mcp_coverity.server",  "Synopsys Coverity"),
-        ("mcp_blackduck.server", "Synopsys Black Duck"),
+        ("mcp_servers.gateway",   "All tools — unified gateway (use for SSE mode testing)"),
+        ("mcp_servers.jira",      "Jira Data Center"),
+        ("mcp_servers.jenkins",   "Jenkins"),
+        ("mcp_servers.nexus",     "Nexus Repository Manager"),
+        ("mcp_servers.bitbucket", "Bitbucket Data Center"),
+        ("mcp_servers.sonarqube", "SonarQube"),
+        ("mcp_servers.coverity",  "Synopsys Coverity"),
+        ("mcp_servers.blackduck", "Synopsys Black Duck"),
     ]
     for module, desc in servers:
         print(f"  {module:<25} {desc}")
     print()
     print("To list all tools in a server:")
-    print("  python test_mcp_client.py mcp_jira.server --list-tools")
+    print("  python test_mcp_client.py mcp_servers.jira --list-tools")
 
 
 def main() -> None:

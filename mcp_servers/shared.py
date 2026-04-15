@@ -11,17 +11,9 @@ def require_env(name: str) -> str:
     """Get a required environment variable or exit with a clear error."""
     value = os.environ.get(name)
     if not value:
-        print(
-            f"[ERROR] Required environment variable '{name}' is not set.",
-            file=sys.stderr,
-        )
+        print(f"[ERROR] Required environment variable '{name}' is not set.", file=sys.stderr)
         sys.exit(1)
     return value
-
-
-def optional_env(name: str, default: str = "") -> str:
-    """Get an optional environment variable with a default."""
-    return os.environ.get(name, default)
 
 
 def ok(data: Any) -> str:
@@ -58,38 +50,22 @@ def run_cmd(
     return result.returncode, result.stdout, result.stderr
 
 
-def http_headers_bearer(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-
-
-def http_headers_basic(username: str, token: str) -> dict[str, str]:
-    import base64
-
-    creds = base64.b64encode(f"{username}:{token}".encode()).decode()
-    return {"Authorization": f"Basic {creds}", "Content-Type": "application/json"}
-
-
 def run_server(mcp_instance: Any, default_port: int) -> None:
     """
-    Start an MCP server in either stdio or SSE mode.
+    Start an MCP server in stdio or SSE mode.
 
-    Transport is selected via the MCP_TRANSPORT environment variable:
-      stdio (default) — Claude Code subprocess model; communicates over stdin/stdout.
-      sse             — Hosted HTTP daemon; Claude Code connects via URL.
+    MCP_TRANSPORT=stdio (default) — Claude Code subprocess model.
+    MCP_TRANSPORT=sse             — HTTP daemon; connect via URL.
 
     SSE env vars:
-      MCP_HOST  — bind address (default: 127.0.0.1)
-      MCP_PORT  — port override (default: server-specific default_port)
+      MCP_HOST — bind address (default: 127.0.0.1)
+      MCP_PORT — port override (default: server-specific default_port)
     """
     transport = os.environ.get("MCP_TRANSPORT", "stdio").lower()
-
     if transport == "sse":
         host = os.environ.get("MCP_HOST", "127.0.0.1")
         port = int(os.environ.get("MCP_PORT", str(default_port)))
-        print(
-            f"[MCP] Starting in SSE mode on http://{host}:{port}/sse",
-            file=sys.stderr,
-        )
+        print(f"[MCP] Starting in SSE mode on http://{host}:{port}/sse", file=sys.stderr)
         mcp_instance.run(transport="sse", host=host, port=port)
     else:
         mcp_instance.run(transport="stdio")

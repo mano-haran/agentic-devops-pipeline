@@ -2,26 +2,20 @@
 MCP Server: Nexus Repository Manager 3 (on-prem)
 
 Environment variables required:
-  NEXUS_BASE_URL   - e.g. https://nexus.company.com
-  NEXUS_USERNAME   - Nexus username
-  NEXUS_PASSWORD   - Nexus password or API token
+  NEXUS_BASE_URL        - e.g. https://nexus.company.com
+  NEXUS_USERNAME        - Nexus username
+  NEXUS_PASSWORD        - Nexus password or API token
   NEXUS_DOCKER_HOST     - Docker registry hostname:port, e.g. nexus.company.com:5000
   NEXUS_DOCKER_REPO     - Docker hosted repo name, e.g. docker-hosted
 """
 
 import os
-import sys
 from pathlib import Path
 
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from shared.utils import err, ok, require_env, run_cmd, run_server
-
-# ---------------------------------------------------------------------------
-# Server bootstrap
-# ---------------------------------------------------------------------------
+from mcp_servers.shared import err, ok, require_env, run_cmd, run_server
 
 mcp = FastMCP("nexus")
 
@@ -45,7 +39,7 @@ def _init() -> None:
 
 
 @mcp.tool()
-async def nexus_upload_maven_artifact(
+async def upload_maven_artifact(
     repository: str,
     group_id: str,
     artifact_id: str,
@@ -70,7 +64,6 @@ async def nexus_upload_maven_artifact(
     if not artifact_path.exists():
         return err(f"Artifact file not found: {file_path}")
 
-    # Nexus 3 REST API v1 component upload
     url = f"{BASE_URL}/service/rest/v1/components?repository={repository}"
 
     classifier_suffix = f"-{classifier}" if classifier else ""
@@ -81,39 +74,32 @@ async def nexus_upload_maven_artifact(
             "maven2.groupId": (None, group_id),
             "maven2.artifactId": (None, artifact_id),
             "maven2.version": (None, version),
-            f"maven2.asset1": (filename, fh, f"application/java-archive"),
+            "maven2.asset1": (filename, fh, "application/java-archive"),
             "maven2.asset1.extension": (None, packaging),
         }
         if classifier:
             files["maven2.asset1.classifier"] = (None, classifier)
 
         async with httpx.AsyncClient(verify=False) as client:
-            r = await client.post(
-                url,
-                auth=AUTH,
-                files=files,
-                timeout=300,
-            )
+            r = await client.post(url, auth=AUTH, files=files, timeout=300)
 
     if r.status_code not in (200, 204):
         return err("Maven artifact upload failed", r.text)
 
-    return ok(
-        {
-            "success": True,
-            "repository": repository,
-            "group_id": group_id,
-            "artifact_id": artifact_id,
-            "version": version,
-            "packaging": packaging,
-            "classifier": classifier,
-            "filename": filename,
-        }
-    )
+    return ok({
+        "success": True,
+        "repository": repository,
+        "group_id": group_id,
+        "artifact_id": artifact_id,
+        "version": version,
+        "packaging": packaging,
+        "classifier": classifier,
+        "filename": filename,
+    })
 
 
 @mcp.tool()
-async def nexus_upload_raw_artifact(
+async def upload_raw_artifact(
     repository: str,
     directory: str,
     file_path: str,
@@ -151,18 +137,16 @@ async def nexus_upload_raw_artifact(
     if r.status_code not in (200, 204):
         return err("Raw artifact upload failed", r.text)
 
-    return ok(
-        {
-            "success": True,
-            "repository": repository,
-            "path": f"/{dir_clean}/{dest_name}",
-            "url": f"{BASE_URL}/repository/{repository}/{dir_clean}/{dest_name}",
-        }
-    )
+    return ok({
+        "success": True,
+        "repository": repository,
+        "path": f"/{dir_clean}/{dest_name}",
+        "url": f"{BASE_URL}/repository/{repository}/{dir_clean}/{dest_name}",
+    })
 
 
 @mcp.tool()
-async def nexus_upload_docker_image(
+async def upload_docker_image(
     local_image: str,
     image_tag: str,
     nexus_repo_path: str = "",
@@ -174,8 +158,8 @@ async def nexus_upload_docker_image(
     NEXUS_DOCKER_HOST env var must be set (e.g. nexus.company.com:5000).
 
     Args:
-        local_image:    Local image name:tag, e.g. 'myapp:latest' or 'myapp:1.2.0'
-        image_tag:      Tag to use in Nexus, e.g. '1.2.0-PROJ-123'
+        local_image:     Local image name:tag, e.g. 'myapp:latest' or 'myapp:1.2.0'
+        image_tag:       Tag to use in Nexus, e.g. '1.2.0-PROJ-123'
         nexus_repo_path: Override the image path in Nexus registry,
                          e.g. 'myorg/myapp'. Defaults to the local image name.
     """
@@ -185,45 +169,31 @@ async def nexus_upload_docker_image(
     base_name = nexus_repo_path or local_image.split(":")[0]
     remote_image = f"{DOCKER_HOST}/{base_name}:{image_tag}"
 
-    # Step 1: tag
     rc, stdout, stderr = run_cmd(["docker", "tag", local_image, remote_image])
     if rc != 0:
-        return err(f"docker tag failed", {"stdout": stdout, "stderr": stderr})
+        return err("docker tag failed", {"stdout": stdout, "stderr": stderr})
 
-    # Step 2: login using env creds (password via stdin to avoid shell history)
     rc, stdout, stderr = run_cmd(
-        ["docker", "login", DOCKER_HOST,
-         "--username", AUTH[0], "--password-stdin"],
-        env={"DOCKER_PASS": AUTH[1]},
+        ["docker", "login", DOCKER_HOST, "-u", AUTH[0], "-p", AUTH[1]]
     )
-    # Note: docker login --password-stdin reads from stdin; we pipe via env trick.
-    # Alternative: use DOCKER_CONFIG or pre-configured credential helper.
     if rc != 0:
-        # Try without stdin (pre-configured credentials)
-        rc, stdout, stderr = run_cmd(
-            ["docker", "login", DOCKER_HOST, "-u", AUTH[0], "-p", AUTH[1]]
-        )
-        if rc != 0:
-            return err("docker login failed", {"stderr": stderr})
+        return err("docker login failed", {"stderr": stderr})
 
-    # Step 3: push
     rc, stdout, stderr = run_cmd(["docker", "push", remote_image], timeout=600)
     if rc != 0:
         return err("docker push failed", {"stdout": stdout, "stderr": stderr})
 
-    return ok(
-        {
-            "success": True,
-            "local_image": local_image,
-            "remote_image": remote_image,
-            "registry": DOCKER_HOST,
-            "push_output": stdout,
-        }
-    )
+    return ok({
+        "success": True,
+        "local_image": local_image,
+        "remote_image": remote_image,
+        "registry": DOCKER_HOST,
+        "push_output": stdout,
+    })
 
 
 @mcp.tool()
-async def nexus_download_artifact(
+async def download_artifact(
     repository: str,
     artifact_path: str,
     output_path: str,
@@ -251,18 +221,16 @@ async def nexus_download_artifact(
                 async for chunk in r.aiter_bytes(chunk_size=65536):
                     fh.write(chunk)
 
-    return ok(
-        {
-            "success": True,
-            "url": url,
-            "output_path": str(output),
-            "size_bytes": output.stat().st_size,
-        }
-    )
+    return ok({
+        "success": True,
+        "url": url,
+        "output_path": str(output),
+        "size_bytes": output.stat().st_size,
+    })
 
 
 @mcp.tool()
-async def nexus_search_artifacts(
+async def search_artifacts(
     repository: str,
     group_id: str = "",
     artifact_id: str = "",
@@ -302,31 +270,29 @@ async def nexus_search_artifacts(
             return err("Search failed", r.text)
 
         items = r.json().get("items", [])[:page_limit]
-        return ok(
-            {
-                "repository": repository,
-                "total": len(items),
-                "items": [
-                    {
-                        "id": item["id"],
-                        "repository": item["repository"],
-                        "format": item["format"],
-                        "group": item.get("group"),
-                        "name": item["name"],
-                        "version": item["version"],
-                        "assets": [
-                            {"path": a["path"], "download_url": a["downloadUrl"]}
-                            for a in item.get("assets", [])
-                        ],
-                    }
-                    for item in items
-                ],
-            }
-        )
+        return ok({
+            "repository": repository,
+            "total": len(items),
+            "items": [
+                {
+                    "id": item["id"],
+                    "repository": item["repository"],
+                    "format": item["format"],
+                    "group": item.get("group"),
+                    "name": item["name"],
+                    "version": item["version"],
+                    "assets": [
+                        {"path": a["path"], "download_url": a["downloadUrl"]}
+                        for a in item.get("assets", [])
+                    ],
+                }
+                for item in items
+            ],
+        })
 
 
 @mcp.tool()
-async def nexus_check_artifact_exists(
+async def check_artifact_exists(
     repository: str,
     artifact_path: str,
 ) -> str:
@@ -342,17 +308,15 @@ async def nexus_check_artifact_exists(
     async with httpx.AsyncClient(verify=False) as client:
         r = await client.head(url, auth=AUTH, timeout=15)
 
-    return ok(
-        {
-            "exists": r.status_code == 200,
-            "url": url,
-            "http_status": r.status_code,
-        }
-    )
+    return ok({
+        "exists": r.status_code == 200,
+        "url": url,
+        "http_status": r.status_code,
+    })
 
 
 @mcp.tool()
-async def nexus_list_repositories() -> str:
+async def list_repositories() -> str:
     """
     List all repositories configured in Nexus with their type and format.
     Useful for discovering repository names before upload/download operations.

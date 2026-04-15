@@ -6,18 +6,10 @@ Environment variables required:
   SONAR_API_TOKEN - SonarQube user or project token
 """
 
-import os
-import sys
-
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from shared.utils import err, ok, require_env, run_cmd, run_server
-
-# ---------------------------------------------------------------------------
-# Server bootstrap
-# ---------------------------------------------------------------------------
+from mcp_servers.shared import err, ok, require_env, run_server
 
 mcp = FastMCP("sonarqube")
 
@@ -59,7 +51,7 @@ def _init() -> None:
 
 
 @mcp.tool()
-async def sonar_get_quality_gate_status(
+async def get_quality_gate_status(
     project_key: str,
     branch: str = "",
     pull_request: str = "",
@@ -105,21 +97,19 @@ async def sonar_get_quality_gate_status(
 
     failed = [c for c in conditions if c["status"] == "ERROR"]
 
-    return ok(
-        {
-            "project_key": project_key,
-            "branch": branch or "default",
-            "status": data.get("status"),           # OK / ERROR / NONE / WARN
-            "passes_gate": data.get("status") == "OK",
-            "ignored_conditions": data.get("ignoredConditions", False),
-            "failed_conditions": failed,
-            "all_conditions": conditions,
-        }
-    )
+    return ok({
+        "project_key": project_key,
+        "branch": branch or "default",
+        "status": data.get("status"),           # OK / ERROR / NONE / WARN
+        "passes_gate": data.get("status") == "OK",
+        "ignored_conditions": data.get("ignoredConditions", False),
+        "failed_conditions": failed,
+        "all_conditions": conditions,
+    })
 
 
 @mcp.tool()
-async def sonar_get_metrics(
+async def get_metrics(
     project_key: str,
     branch: str = "",
     metric_keys: str = "",
@@ -162,19 +152,17 @@ async def sonar_get_metrics(
         for m in component.get("measures", [])
     }
 
-    return ok(
-        {
-            "project_key": project_key,
-            "branch": branch or "default",
-            "name": component.get("name"),
-            "qualifier": component.get("qualifier"),
-            "metrics": measures,
-        }
-    )
+    return ok({
+        "project_key": project_key,
+        "branch": branch or "default",
+        "name": component.get("name"),
+        "qualifier": component.get("qualifier"),
+        "metrics": measures,
+    })
 
 
 @mcp.tool()
-async def sonar_get_issues(
+async def get_issues(
     project_key: str,
     branch: str = "",
     severities: str = "BLOCKER,CRITICAL,MAJOR",
@@ -222,37 +210,35 @@ async def sonar_get_issues(
     data = r.json()
     issues = data.get("issues", [])
 
-    return ok(
-        {
-            "project_key": project_key,
-            "branch": branch or "default",
-            "total": data.get("total", len(issues)),
-            "page": page,
-            "page_size": page_size,
-            "issues": [
-                {
-                    "key": iss["key"],
-                    "rule": iss["rule"],
-                    "severity": iss["severity"],
-                    "type": iss["type"],
-                    "status": iss["status"],
-                    "component": iss["component"],
-                    "line": iss.get("line"),
-                    "message": iss["message"],
-                    "effort": iss.get("effort"),
-                    "debt": iss.get("debt"),
-                    "tags": iss.get("tags", []),
-                    "creation_date": iss.get("creationDate"),
-                    "update_date": iss.get("updateDate"),
-                }
-                for iss in issues
-            ],
-        }
-    )
+    return ok({
+        "project_key": project_key,
+        "branch": branch or "default",
+        "total": data.get("total", len(issues)),
+        "page": page,
+        "page_size": page_size,
+        "issues": [
+            {
+                "key": iss["key"],
+                "rule": iss["rule"],
+                "severity": iss["severity"],
+                "type": iss["type"],
+                "status": iss["status"],
+                "component": iss["component"],
+                "line": iss.get("line"),
+                "message": iss["message"],
+                "effort": iss.get("effort"),
+                "debt": iss.get("debt"),
+                "tags": iss.get("tags", []),
+                "creation_date": iss.get("creationDate"),
+                "update_date": iss.get("updateDate"),
+            }
+            for iss in issues
+        ],
+    })
 
 
 @mcp.tool()
-async def sonar_get_issue_suggestions(
+async def get_issue_suggestions(
     project_key: str,
     branch: str = "",
     severities: str = "BLOCKER,CRITICAL",
@@ -280,7 +266,6 @@ async def sonar_get_issue_suggestions(
         params["branch"] = branch
 
     async with httpx.AsyncClient(verify=False) as client:
-        # Get issues
         issues_r = await client.get(
             f"{BASE_URL}/api/issues/search",
             auth=AUTH,
@@ -294,96 +279,36 @@ async def sonar_get_issue_suggestions(
         issues = data.get("issues", [])
         rules_map = {r["key"]: r for r in data.get("rules", [])}
 
-        # Enrich with rule descriptions
         enriched = []
         for iss in issues:
             rule_info = rules_map.get(iss["rule"], {})
-            enriched.append(
-                {
-                    "key": iss["key"],
-                    "severity": iss["severity"],
-                    "type": iss["type"],
-                    "component": iss["component"].replace(f"{project_key}:", ""),
-                    "line": iss.get("line"),
-                    "message": iss["message"],
-                    "effort": iss.get("effort"),
-                    "rule": {
-                        "key": iss["rule"],
-                        "name": rule_info.get("name", ""),
-                        "description": rule_info.get("htmlDesc", ""),
-                        "remediation_function": rule_info.get("remFnType", ""),
-                        "remediation_effort": rule_info.get("remFnBaseEffort", ""),
-                    },
-                }
-            )
+            enriched.append({
+                "key": iss["key"],
+                "severity": iss["severity"],
+                "type": iss["type"],
+                "component": iss["component"].replace(f"{project_key}:", ""),
+                "line": iss.get("line"),
+                "message": iss["message"],
+                "effort": iss.get("effort"),
+                "rule": {
+                    "key": iss["rule"],
+                    "name": rule_info.get("name", ""),
+                    "description": rule_info.get("htmlDesc", ""),
+                    "remediation_function": rule_info.get("remFnType", ""),
+                    "remediation_effort": rule_info.get("remFnBaseEffort", ""),
+                },
+            })
 
-    return ok(
-        {
-            "project_key": project_key,
-            "branch": branch or "default",
-            "total_critical_issues": len(enriched),
-            "issues_with_guidance": enriched,
-        }
-    )
+    return ok({
+        "project_key": project_key,
+        "branch": branch or "default",
+        "total_critical_issues": len(enriched),
+        "issues_with_guidance": enriched,
+    })
 
 
 @mcp.tool()
-async def sonar_get_project_analysis_status(
-    project_key: str,
-    branch: str = "",
-) -> str:
-    """
-    Check whether a SonarQube project has a recent completed analysis.
-    Use this after triggering a scan to know when results are ready.
-
-    Args:
-        project_key: SonarQube project key
-        branch:      Branch name (optional)
-    """
-    params: dict = {"project": project_key}
-    if branch:
-        params["branch"] = branch
-
-    async with httpx.AsyncClient(verify=False) as client:
-        r = await client.get(
-            f"{BASE_URL}/api/ce/activity",
-            auth=AUTH,
-            params={**params, "ps": 1, "status": "SUCCESS,FAILED,CANCELED"},
-            timeout=30,
-        )
-
-    if r.status_code != 200:
-        return err(f"Failed to get analysis status for '{project_key}'", r.text)
-
-    tasks = r.json().get("tasks", [])
-    if not tasks:
-        return ok(
-            {
-                "project_key": project_key,
-                "has_analysis": False,
-                "message": "No completed analysis found.",
-            }
-        )
-
-    latest = tasks[0]
-    return ok(
-        {
-            "project_key": project_key,
-            "has_analysis": True,
-            "task_id": latest["id"],
-            "status": latest["status"],
-            "analysis_id": latest.get("analysisId"),
-            "submitted_at": latest.get("submittedAt"),
-            "started_at": latest.get("startedAt"),
-            "executed_at": latest.get("executedAt"),
-            "duration_ms": latest.get("executionTimeMs"),
-            "warnings": latest.get("warnings", []),
-        }
-    )
-
-
-@mcp.tool()
-async def sonar_get_new_code_issues(
+async def get_new_code_issues(
     project_key: str,
     branch: str = "",
     severities: str = "BLOCKER,CRITICAL,MAJOR",
@@ -424,30 +349,77 @@ async def sonar_get_new_code_issues(
     by_severity: dict = {}
     for iss in issues:
         sev = iss["severity"]
-        by_severity.setdefault(sev, []).append(
-            {
-                "component": iss["component"].replace(f"{project_key}:", ""),
-                "line": iss.get("line"),
-                "message": iss["message"],
-                "type": iss["type"],
-            }
-        )
+        by_severity.setdefault(sev, []).append({
+            "component": iss["component"].replace(f"{project_key}:", ""),
+            "line": iss.get("line"),
+            "message": iss["message"],
+            "type": iss["type"],
+        })
 
-    return ok(
-        {
-            "project_key": project_key,
-            "branch": branch or "default",
-            "total_new_issues": data.get("total", len(issues)),
-            "by_severity": {
-                sev: {"count": len(items), "items": items}
-                for sev, items in by_severity.items()
-            },
-        }
-    )
+    return ok({
+        "project_key": project_key,
+        "branch": branch or "default",
+        "total_new_issues": data.get("total", len(issues)),
+        "by_severity": {
+            sev: {"count": len(items), "items": items}
+            for sev, items in by_severity.items()
+        },
+    })
 
 
 @mcp.tool()
-async def sonar_list_projects(
+async def get_project_analysis_status(
+    project_key: str,
+    branch: str = "",
+) -> str:
+    """
+    Check whether a SonarQube project has a recent completed analysis.
+    Use this after triggering a scan to know when results are ready.
+
+    Args:
+        project_key: SonarQube project key
+        branch:      Branch name (optional)
+    """
+    params: dict = {"project": project_key}
+    if branch:
+        params["branch"] = branch
+
+    async with httpx.AsyncClient(verify=False) as client:
+        r = await client.get(
+            f"{BASE_URL}/api/ce/activity",
+            auth=AUTH,
+            params={**params, "ps": 1, "status": "SUCCESS,FAILED,CANCELED"},
+            timeout=30,
+        )
+
+    if r.status_code != 200:
+        return err(f"Failed to get analysis status for '{project_key}'", r.text)
+
+    tasks = r.json().get("tasks", [])
+    if not tasks:
+        return ok({
+            "project_key": project_key,
+            "has_analysis": False,
+            "message": "No completed analysis found.",
+        })
+
+    latest = tasks[0]
+    return ok({
+        "project_key": project_key,
+        "has_analysis": True,
+        "task_id": latest["id"],
+        "status": latest["status"],
+        "analysis_id": latest.get("analysisId"),
+        "submitted_at": latest.get("submittedAt"),
+        "started_at": latest.get("startedAt"),
+        "executed_at": latest.get("executedAt"),
+        "duration_ms": latest.get("executionTimeMs"),
+        "warnings": latest.get("warnings", []),
+    })
+
+
+@mcp.tool()
+async def list_projects(
     search: str = "",
     page_size: int = 50,
 ) -> str:
@@ -474,20 +446,18 @@ async def sonar_list_projects(
         return err("Failed to list projects", r.text)
 
     components = r.json().get("components", [])
-    return ok(
-        {
-            "total": len(components),
-            "projects": [
-                {
-                    "key": c["key"],
-                    "name": c["name"],
-                    "qualifier": c["qualifier"],
-                    "last_analysis": c.get("lastAnalysisDate", "never"),
-                }
-                for c in components
-            ],
-        }
-    )
+    return ok({
+        "total": len(components),
+        "projects": [
+            {
+                "key": c["key"],
+                "name": c["name"],
+                "qualifier": c["qualifier"],
+                "last_analysis": c.get("lastAnalysisDate", "never"),
+            }
+            for c in components
+        ],
+    })
 
 
 # ---------------------------------------------------------------------------

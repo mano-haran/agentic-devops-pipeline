@@ -11,22 +11,14 @@ on the VM (SSH keys or credential helper). The BITBUCKET_BASE_URL and
 BITBUCKET_API_TOKEN are used for REST API calls only.
 """
 
-import os
-import sys
-import json
 from urllib.parse import urlparse
 
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from shared.utils import err, ok, require_env, run_cmd, run_server
+from mcp_servers.shared import err, ok, require_env, run_cmd, run_server
 
-# ---------------------------------------------------------------------------
-# Server bootstrap
-# ---------------------------------------------------------------------------
-
-mcp = FastMCP("bitbucket-dc")
+mcp = FastMCP("bitbucket")
 
 BASE_URL: str = ""
 HEADERS: dict[str, str] = {}
@@ -58,7 +50,7 @@ def _clone_url(project_key: str, repo_slug: str) -> str:
 
 
 @mcp.tool()
-async def bitbucket_clone_repo(
+async def clone_repo(
     project_key: str,
     repo_slug: str,
     target_dir: str,
@@ -87,27 +79,24 @@ async def bitbucket_clone_repo(
 
     rc, stdout, stderr = run_cmd(cmd, timeout=300)
 
-    # Mask the token in any logged output
     stderr_clean = stderr.replace(GIT_TOKEN, "***")
     stdout_clean = stdout.replace(GIT_TOKEN, "***")
 
     if rc != 0:
         return err("git clone failed", {"stderr": stderr_clean})
 
-    return ok(
-        {
-            "success": True,
-            "project_key": project_key,
-            "repo_slug": repo_slug,
-            "target_dir": target_dir,
-            "branch": branch or "default",
-            "output": stdout_clean,
-        }
-    )
+    return ok({
+        "success": True,
+        "project_key": project_key,
+        "repo_slug": repo_slug,
+        "target_dir": target_dir,
+        "branch": branch or "default",
+        "output": stdout_clean,
+    })
 
 
 @mcp.tool()
-async def bitbucket_create_pr(
+async def create_pr(
     project_key: str,
     repo_slug: str,
     title: str,
@@ -177,22 +166,20 @@ async def bitbucket_create_pr(
         f"{BASE_URL}/projects/{project_key}/repos/{repo_slug}/pull-requests/{data['id']}",
     )
 
-    return ok(
-        {
-            "success": True,
-            "pr_id": data["id"],
-            "pr_title": data["title"],
-            "state": data["state"],
-            "source_branch": source_branch,
-            "target_branch": target_branch,
-            "url": pr_url,
-            "reviewers": [r["user"]["displayName"] for r in data.get("reviewers", [])],
-        }
-    )
+    return ok({
+        "success": True,
+        "pr_id": data["id"],
+        "pr_title": data["title"],
+        "state": data["state"],
+        "source_branch": source_branch,
+        "target_branch": target_branch,
+        "url": pr_url,
+        "reviewers": [rv["user"]["displayName"] for rv in data.get("reviewers", [])],
+    })
 
 
 @mcp.tool()
-async def bitbucket_get_pr(
+async def get_pr(
     project_key: str,
     repo_slug: str,
     pr_id: int,
@@ -222,36 +209,34 @@ async def bitbucket_get_pr(
         "",
     )
 
-    return ok(
-        {
-            "pr_id": data["id"],
-            "title": data["title"],
-            "description": data.get("description", ""),
-            "state": data["state"],
-            "open": data.get("open"),
-            "closed": data.get("closed"),
-            "merged": data.get("merged", False),
-            "source_branch": data["fromRef"]["displayId"],
-            "target_branch": data["toRef"]["displayId"],
-            "author": data["author"]["user"]["displayName"],
-            "created_date": data.get("createdDate"),
-            "updated_date": data.get("updatedDate"),
-            "reviewers": [
-                {
-                    "name": rv["user"]["displayName"],
-                    "approved": rv.get("approved", False),
-                    "status": rv.get("status", "UNAPPROVED"),
-                }
-                for rv in data.get("reviewers", [])
-            ],
-            "url": pr_url,
-            "can_merge": data.get("properties", {}).get("mergeResult", {}).get("outcome") == "CLEAN",
-        }
-    )
+    return ok({
+        "pr_id": data["id"],
+        "title": data["title"],
+        "description": data.get("description", ""),
+        "state": data["state"],
+        "open": data.get("open"),
+        "closed": data.get("closed"),
+        "merged": data.get("merged", False),
+        "source_branch": data["fromRef"]["displayId"],
+        "target_branch": data["toRef"]["displayId"],
+        "author": data["author"]["user"]["displayName"],
+        "created_date": data.get("createdDate"),
+        "updated_date": data.get("updatedDate"),
+        "reviewers": [
+            {
+                "name": rv["user"]["displayName"],
+                "approved": rv.get("approved", False),
+                "status": rv.get("status", "UNAPPROVED"),
+            }
+            for rv in data.get("reviewers", [])
+        ],
+        "url": pr_url,
+        "can_merge": data.get("properties", {}).get("mergeResult", {}).get("outcome") == "CLEAN",
+    })
 
 
 @mcp.tool()
-async def bitbucket_merge_pr(
+async def merge_pr(
     project_key: str,
     repo_slug: str,
     pr_id: int,
@@ -269,7 +254,6 @@ async def bitbucket_merge_pr(
                         (must match what the repo allows)
         message:        Custom merge commit message (optional)
     """
-    # First get the PR version for optimistic locking
     async with httpx.AsyncClient(verify=False) as client:
         get_r = await client.get(
             f"{BASE_URL}/rest/api/1.0/projects/{project_key}/repos/{repo_slug}/pull-requests/{pr_id}",
@@ -297,19 +281,17 @@ async def bitbucket_merge_pr(
         return err(f"Failed to merge PR {pr_id}", r.text)
 
     data = r.json()
-    return ok(
-        {
-            "success": True,
-            "pr_id": pr_id,
-            "state": data.get("state"),
-            "merged": data.get("merged", False),
-            "merge_strategy": merge_strategy,
-        }
-    )
+    return ok({
+        "success": True,
+        "pr_id": pr_id,
+        "state": data.get("state"),
+        "merged": data.get("merged", False),
+        "merge_strategy": merge_strategy,
+    })
 
 
 @mcp.tool()
-async def bitbucket_list_open_prs(
+async def list_open_prs(
     project_key: str,
     repo_slug: str,
     target_branch: str = "",
@@ -349,27 +331,25 @@ async def bitbucket_list_open_prs(
             if pr.get("author", {}).get("user", {}).get("name") == author_username
         ]
 
-    return ok(
-        {
-            "total": len(prs),
-            "pull_requests": [
-                {
-                    "id": pr["id"],
-                    "title": pr["title"],
-                    "state": pr["state"],
-                    "source_branch": pr["fromRef"]["displayId"],
-                    "target_branch": pr["toRef"]["displayId"],
-                    "author": pr["author"]["user"]["displayName"],
-                    "created_date": pr.get("createdDate"),
-                }
-                for pr in prs
-            ],
-        }
-    )
+    return ok({
+        "total": len(prs),
+        "pull_requests": [
+            {
+                "id": pr["id"],
+                "title": pr["title"],
+                "state": pr["state"],
+                "source_branch": pr["fromRef"]["displayId"],
+                "target_branch": pr["toRef"]["displayId"],
+                "author": pr["author"]["user"]["displayName"],
+                "created_date": pr.get("createdDate"),
+            }
+            for pr in prs
+        ],
+    })
 
 
 @mcp.tool()
-async def bitbucket_create_tag(
+async def create_tag(
     repo_dir: str,
     tag_name: str,
     message: str,
@@ -393,15 +373,15 @@ async def bitbucket_create_tag(
 
     rc, stdout, stderr = run_cmd(tag_cmd, cwd=repo_dir)
     if rc != 0:
-        return err(f"git tag failed", {"stderr": stderr})
+        return err("git tag failed", {"stderr": stderr})
 
-    result = {"success": True, "tag_name": tag_name, "repo_dir": repo_dir}
+    result: dict = {"success": True, "tag_name": tag_name, "repo_dir": repo_dir}
 
     if push:
         push_cmd = ["git", "push", "origin", tag_name]
         rc, stdout, stderr = run_cmd(push_cmd, cwd=repo_dir)
         if rc != 0:
-            return err(f"git push tag failed", {"stderr": stderr.replace(GIT_TOKEN, "***")})
+            return err("git push tag failed", {"stderr": stderr.replace(GIT_TOKEN, "***")})
         result["pushed"] = True
         result["push_output"] = stdout
 
@@ -409,7 +389,7 @@ async def bitbucket_create_tag(
 
 
 @mcp.tool()
-async def bitbucket_push_branch(
+async def push_branch(
     repo_dir: str,
     branch_name: str,
     set_upstream: bool = True,
@@ -433,18 +413,67 @@ async def bitbucket_push_branch(
     if rc != 0:
         return err("git push failed", {"stderr": stderr.replace(GIT_TOKEN, "***")})
 
-    return ok(
-        {
-            "success": True,
-            "branch": branch_name,
-            "repo_dir": repo_dir,
-            "output": stdout,
-        }
-    )
+    return ok({
+        "success": True,
+        "branch": branch_name,
+        "repo_dir": repo_dir,
+        "output": stdout,
+    })
 
 
 @mcp.tool()
-async def bitbucket_get_commit_diff(
+async def get_pr_diff(
+    project_key: str,
+    repo_slug: str,
+    pr_id: int,
+) -> str:
+    """
+    Get the file-level diff for a Bitbucket pull request.
+    Used by Inspector agent for code review analysis.
+
+    Args:
+        project_key: Bitbucket project key
+        repo_slug:   Repository slug
+        pr_id:       Pull request ID
+    """
+    async with httpx.AsyncClient(verify=False) as client:
+        r = await client.get(
+            f"{BASE_URL}/rest/api/1.0/projects/{project_key}/repos/{repo_slug}"
+            f"/pull-requests/{pr_id}/diff",
+            headers=HEADERS,
+            timeout=60,
+        )
+
+    if r.status_code != 200:
+        return err(f"Failed to get diff for PR {pr_id}", r.text)
+
+    data = r.json()
+    diffs = data.get("diffs", [])
+
+    return ok({
+        "pr_id": pr_id,
+        "files_changed": len(diffs),
+        "diffs": [
+            {
+                "path": d.get("destination", d.get("source", {})).get("toString", ""),
+                "type": "MODIFY" if d.get("source") and d.get("destination") else
+                        "ADD" if d.get("destination") else "DELETE",
+                "hunks": [
+                    {
+                        "source_line": h["sourceLine"],
+                        "dest_line": h["destinationLine"],
+                        "segments": len(h.get("segments", [])),
+                    }
+                    for h in d.get("hunks", [])
+                ],
+            }
+            for d in diffs
+        ],
+    })
+
+
+@mcp.tool()
+async def get_commit_diff(
     project_key: str,
     repo_slug: str,
     since_commit: str,
@@ -481,74 +510,19 @@ async def bitbucket_get_commit_diff(
     data = r.json()
     diffs = data.get("diffs", [])
 
-    return ok(
-        {
-            "since": since_commit,
-            "until": until_commit,
-            "files_changed": len(diffs),
-            "diffs": [
-                {
-                    "source": d.get("source", {}).get("toString", ""),
-                    "destination": d.get("destination", {}).get("toString", ""),
-                    "hunks": len(d.get("hunks", [])),
-                }
-                for d in diffs
-            ],
-        }
-    )
-
-
-@mcp.tool()
-async def bitbucket_get_pr_diff(
-    project_key: str,
-    repo_slug: str,
-    pr_id: int,
-) -> str:
-    """
-    Get the file-level diff for a Bitbucket pull request.
-    Used by Inspector agent for code review analysis.
-
-    Args:
-        project_key: Bitbucket project key
-        repo_slug:   Repository slug
-        pr_id:       Pull request ID
-    """
-    async with httpx.AsyncClient(verify=False) as client:
-        r = await client.get(
-            f"{BASE_URL}/rest/api/1.0/projects/{project_key}/repos/{repo_slug}"
-            f"/pull-requests/{pr_id}/diff",
-            headers=HEADERS,
-            timeout=60,
-        )
-
-    if r.status_code != 200:
-        return err(f"Failed to get diff for PR {pr_id}", r.text)
-
-    data = r.json()
-    diffs = data.get("diffs", [])
-
-    return ok(
-        {
-            "pr_id": pr_id,
-            "files_changed": len(diffs),
-            "diffs": [
-                {
-                    "path": d.get("destination", d.get("source", {})).get("toString", ""),
-                    "type": "MODIFY" if d.get("source") and d.get("destination") else
-                            "ADD" if d.get("destination") else "DELETE",
-                    "hunks": [
-                        {
-                            "source_line": h["sourceLine"],
-                            "dest_line": h["destinationLine"],
-                            "segments": len(h.get("segments", [])),
-                        }
-                        for h in d.get("hunks", [])
-                    ],
-                }
-                for d in diffs
-            ],
-        }
-    )
+    return ok({
+        "since": since_commit,
+        "until": until_commit,
+        "files_changed": len(diffs),
+        "diffs": [
+            {
+                "source": d.get("source", {}).get("toString", ""),
+                "destination": d.get("destination", {}).get("toString", ""),
+                "hunks": len(d.get("hunks", [])),
+            }
+            for d in diffs
+        ],
+    })
 
 
 # ---------------------------------------------------------------------------

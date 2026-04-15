@@ -8,19 +8,12 @@ Environment variables required:
 """
 
 import json
-import os
-import sys
 import time
 
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from shared.utils import err, ok, require_env, run_server
-
-# ---------------------------------------------------------------------------
-# Server bootstrap
-# ---------------------------------------------------------------------------
+from mcp_servers.shared import err, ok, require_env, run_server
 
 mcp = FastMCP("jenkins")
 
@@ -54,7 +47,7 @@ async def _get_crumb(client: httpx.AsyncClient) -> dict[str, str]:
 
 
 @mcp.tool()
-async def jenkins_trigger_build(
+async def trigger_build(
     job_name: str,
     parameters_json: str = "",
     wait_for_start: bool = True,
@@ -122,22 +115,20 @@ async def jenkins_trigger_build(
                 qdata = qr.json()
                 executable = qdata.get("executable")
                 if executable:
-                    return ok(
-                        {
-                            "success": True,
-                            "job_name": job_name,
-                            "build_number": executable["number"],
-                            "build_url": executable["url"],
-                            "queue_url": queue_url,
-                        }
-                    )
+                    return ok({
+                        "success": True,
+                        "job_name": job_name,
+                        "build_number": executable["number"],
+                        "build_url": executable["url"],
+                        "queue_url": queue_url,
+                    })
 
         return ok({"success": True, "job_name": job_name, "queue_url": queue_url,
                    "note": "Build queued but number not yet assigned; check Jenkins UI."})
 
 
 @mcp.tool()
-async def jenkins_get_build_status(job_name: str, build_number: int) -> str:
+async def get_build_status(job_name: str, build_number: int) -> str:
     """
     Get the current status and result of a specific Jenkins build.
 
@@ -155,28 +146,26 @@ async def jenkins_get_build_status(job_name: str, build_number: int) -> str:
 
         data = r.json()
         duration_s = data.get("duration", 0) / 1000
-        return ok(
-            {
-                "job_name": job_name,
-                "build_number": data["number"],
-                "result": data.get("result"),          # SUCCESS, FAILURE, ABORTED, null (in progress)
-                "building": data.get("building", False),
-                "duration_seconds": round(duration_s, 1),
-                "timestamp": data.get("timestamp"),
-                "url": data.get("url"),
-                "display_name": data.get("displayName"),
-                "description": data.get("description"),
-                "causes": [
-                    c.get("shortDescription", "")
-                    for c in data.get("actions", [{}])[0].get("causes", [])
-                    if "shortDescription" in c
-                ],
-            }
-        )
+        return ok({
+            "job_name": job_name,
+            "build_number": data["number"],
+            "result": data.get("result"),          # SUCCESS, FAILURE, ABORTED, null (in progress)
+            "building": data.get("building", False),
+            "duration_seconds": round(duration_s, 1),
+            "timestamp": data.get("timestamp"),
+            "url": data.get("url"),
+            "display_name": data.get("displayName"),
+            "description": data.get("description"),
+            "causes": [
+                c.get("shortDescription", "")
+                for c in data.get("actions", [{}])[0].get("causes", [])
+                if "shortDescription" in c
+            ],
+        })
 
 
 @mcp.tool()
-async def jenkins_get_last_build(job_name: str) -> str:
+async def get_last_build(job_name: str) -> str:
     """
     Get status information for the last build of a Jenkins job.
 
@@ -192,20 +181,18 @@ async def jenkins_get_last_build(job_name: str) -> str:
             return err(f"Failed to get last build for '{job_name}'", r.text)
 
         data = r.json()
-        return ok(
-            {
-                "job_name": job_name,
-                "build_number": data["number"],
-                "result": data.get("result"),
-                "building": data.get("building", False),
-                "duration_seconds": round(data.get("duration", 0) / 1000, 1),
-                "url": data.get("url"),
-            }
-        )
+        return ok({
+            "job_name": job_name,
+            "build_number": data["number"],
+            "result": data.get("result"),
+            "building": data.get("building", False),
+            "duration_seconds": round(data.get("duration", 0) / 1000, 1),
+            "url": data.get("url"),
+        })
 
 
 @mcp.tool()
-async def jenkins_get_console_output(
+async def get_console_output(
     job_name: str,
     build_number: int,
     start_byte: int = 0,
@@ -237,19 +224,17 @@ async def jenkins_get_console_output(
         more = r.headers.get("X-More-Data", "false").lower() == "true"
         next_byte = int(r.headers.get("X-Text-Size", start_byte))
 
-        return ok(
-            {
-                "job_name": job_name,
-                "build_number": build_number,
-                "output": r.text,
-                "more_data": more,
-                "next_start_byte": next_byte,
-            }
-        )
+        return ok({
+            "job_name": job_name,
+            "build_number": build_number,
+            "output": r.text,
+            "more_data": more,
+            "next_start_byte": next_byte,
+        })
 
 
 @mcp.tool()
-async def jenkins_get_job_info(job_name: str) -> str:
+async def get_job_info(job_name: str) -> str:
     """
     Get job configuration metadata including parameters, last build result,
     and build history summary.
@@ -266,42 +251,40 @@ async def jenkins_get_job_info(job_name: str) -> str:
             return err(f"Failed to get job info for '{job_name}'", r.text)
 
         data = r.json()
-        return ok(
-            {
-                "job_name": job_name,
-                "display_name": data.get("displayName"),
-                "description": data.get("description"),
-                "buildable": data.get("buildable"),
-                "url": data.get("url"),
-                "last_build": {
-                    "number": (data.get("lastBuild") or {}).get("number"),
-                    "url": (data.get("lastBuild") or {}).get("url"),
-                },
-                "last_successful_build": {
-                    "number": (data.get("lastSuccessfulBuild") or {}).get("number"),
-                },
-                "last_failed_build": {
-                    "number": (data.get("lastFailedBuild") or {}).get("number"),
-                },
-                "health_report": [
-                    h.get("description") for h in data.get("healthReport", [])
-                ],
-                "parameters": [
-                    {
-                        "name": p["defaultParameterValue"].get("name", ""),
-                        "type": p["type"],
-                        "default": p["defaultParameterValue"].get("value", ""),
-                        "description": p.get("description", ""),
-                    }
-                    for action in data.get("actions", [])
-                    for p in action.get("parameterDefinitions", [])
-                ],
-            }
-        )
+        return ok({
+            "job_name": job_name,
+            "display_name": data.get("displayName"),
+            "description": data.get("description"),
+            "buildable": data.get("buildable"),
+            "url": data.get("url"),
+            "last_build": {
+                "number": (data.get("lastBuild") or {}).get("number"),
+                "url": (data.get("lastBuild") or {}).get("url"),
+            },
+            "last_successful_build": {
+                "number": (data.get("lastSuccessfulBuild") or {}).get("number"),
+            },
+            "last_failed_build": {
+                "number": (data.get("lastFailedBuild") or {}).get("number"),
+            },
+            "health_report": [
+                h.get("description") for h in data.get("healthReport", [])
+            ],
+            "parameters": [
+                {
+                    "name": p["defaultParameterValue"].get("name", ""),
+                    "type": p["type"],
+                    "default": p["defaultParameterValue"].get("value", ""),
+                    "description": p.get("description", ""),
+                }
+                for action in data.get("actions", [])
+                for p in action.get("parameterDefinitions", [])
+            ],
+        })
 
 
 @mcp.tool()
-async def jenkins_wait_for_build(
+async def wait_for_build(
     job_name: str,
     build_number: int,
     poll_interval_seconds: int = 15,
@@ -329,16 +312,14 @@ async def jenkins_wait_for_build(
 
             data = r.json()
             if not data.get("building", True):
-                return ok(
-                    {
-                        "job_name": job_name,
-                        "build_number": build_number,
-                        "result": data.get("result"),
-                        "duration_seconds": round(data.get("duration", 0) / 1000, 1),
-                        "url": data.get("url"),
-                        "elapsed_seconds": elapsed,
-                    }
-                )
+                return ok({
+                    "job_name": job_name,
+                    "build_number": build_number,
+                    "result": data.get("result"),
+                    "duration_seconds": round(data.get("duration", 0) / 1000, 1),
+                    "url": data.get("url"),
+                    "elapsed_seconds": elapsed,
+                })
 
             time.sleep(poll_interval_seconds)
             elapsed += poll_interval_seconds
