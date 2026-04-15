@@ -85,7 +85,7 @@ Triggers and monitors Jenkins builds. Handles CSRF crumb and folder-based job pa
 
 | Tool | Description | Arguments |
 |------|-------------|-----------|
-| `trigger_build` | Trigger a job with optional parameters; polls queue until build number is assigned | `job_name`, `parameters_json` _(opt)_, `wait_for_start` _(opt)_ |
+| `trigger_build` | Trigger a job with optional parameters; polls queue until build number is assigned | `job_name`, `parameters` _(opt, KEY=VALUE pairs e.g. `BRANCH=main,ENV=sit`)_, `wait_for_start` _(opt)_ |
 | `get_build_status` | Get result, duration, and build state for a specific build | `job_name`, `build_number` |
 | `get_last_build` | Get status of the most recent build | `job_name` |
 | `get_console_output` | Stream console log with byte-offset pagination for large logs | `job_name`, `build_number`, `start_byte` _(opt)_ |
@@ -277,7 +277,7 @@ python mcp_servers/test_mcp_client.py mcp_servers.jenkins get_last_build job_nam
 python mcp_servers/test_mcp_client.py mcp_servers.jenkins get_build_status job_name=smart-devops/build-app build_number=42
 python mcp_servers/test_mcp_client.py mcp_servers.jenkins get_console_output job_name=smart-devops/build-app build_number=42 start_byte=0
 python mcp_servers/test_mcp_client.py mcp_servers.jenkins wait_for_build job_name=smart-devops/build-app build_number=42 poll_interval_seconds=15 timeout_seconds=900
-python mcp_servers/test_mcp_client.py mcp_servers.jenkins trigger_build job_name=smart-devops/build-app parameters_json='{"BRANCH":"release/1.2.0","JIRA_TICKET":"PROJ-123"}' wait_for_start=true
+python mcp_servers/test_mcp_client.py mcp_servers.jenkins trigger_build job_name=smart-devops/build-app parameters=BRANCH=release/1.2.0,JIRA_TICKET=PROJ-123 wait_for_start=true
 ```
 
 #### Nexus

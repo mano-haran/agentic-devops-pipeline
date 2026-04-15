@@ -7,7 +7,6 @@ Environment variables required:
   JENKINS_API_TOKEN - Jenkins API token (User > Configure > API Token)
 """
 
-import json
 import time
 
 import httpx
@@ -49,7 +48,7 @@ async def _get_crumb(client: httpx.AsyncClient) -> dict[str, str]:
 @mcp.tool()
 async def trigger_build(
     job_name: str,
-    parameters_json: str = "",
+    parameters: str = "",
     wait_for_start: bool = True,
 ) -> str:
     """
@@ -57,19 +56,22 @@ async def trigger_build(
     Returns the queue item URL and build number once the build starts.
 
     Args:
-        job_name:        Full job path, e.g. 'smart-devops/build-app'
-                         or 'folder/subfolder/job-name'
-        parameters_json: JSON object of build parameters, e.g.
-                         '{"BRANCH": "release/1.2.0", "JIRA_TICKET": "PROJ-123"}'
-        wait_for_start:  If true, poll the queue until the build number is assigned
-                         (up to 60 seconds)
+        job_name:       Full job path, e.g. 'smart-devops/build-app'
+                        or 'folder/subfolder/job-name'
+        parameters:     Build parameters as comma-separated KEY=VALUE pairs, e.g.
+                        'BRANCH=release/1.2.0,JIRA_TICKET=PROJ-123'
+        wait_for_start: If true, poll the queue until the build number is assigned
+                        (up to 60 seconds)
     """
     params: dict = {}
-    if parameters_json:
-        try:
-            params = json.loads(parameters_json)
-        except json.JSONDecodeError as exc:
-            return err("parameters_json is not valid JSON", str(exc))
+    if parameters:
+        for pair in parameters.split(","):
+            pair = pair.strip()
+            if "=" in pair:
+                key, _, value = pair.partition("=")
+                params[key.strip()] = value.strip()
+            else:
+                return err(f"Invalid parameter format '{pair}': expected KEY=VALUE")
 
     # Encode job path (handles folders with slashes)
     job_path = "/job/".join(job_name.strip("/").split("/"))

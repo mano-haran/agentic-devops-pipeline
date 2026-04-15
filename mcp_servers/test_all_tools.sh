@@ -150,7 +150,7 @@ test_jenkins() {
     run_test "trigger_build" \
         $CLIENT mcp_servers.jenkins trigger_build \
         job_name="$JOB" \
-        parameters_json='{"BRANCH":"feature/test","JIRA_TICKET":"PROJ-1"}' \
+        parameters="BRANCH=feature/test,JIRA_TICKET=PROJ-1" \
         wait_for_start=true
 MANUAL_TESTS
 }
