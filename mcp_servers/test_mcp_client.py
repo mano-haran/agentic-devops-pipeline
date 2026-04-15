@@ -83,7 +83,7 @@ async def run_test(server_module: str, tool_name: str, arguments: dict) -> None:
 
 
 async def list_tools_only(server_module: str) -> None:
-    """List all tools in a server without calling any."""
+    """List all tools in a server, including their full input schema."""
     try:
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
@@ -101,13 +101,32 @@ async def list_tools_only(server_module: str) -> None:
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools_result = await session.list_tools()
-            print(f"\nTools in '{server_module}':\n")
-            for tool in sorted(tools_result.tools, key=lambda t: t.name):
-                print(f"  {tool.name}")
+            tools = sorted(tools_result.tools, key=lambda t: t.name)
+            print(f"\nServer : {server_module}")
+            print(f"Tools  : {len(tools)}\n")
+            print("=" * 60)
+            for tool in tools:
+                print(f"\n  {tool.name}")
                 if tool.description:
-                    first_line = tool.description.strip().split("\n")[0]
-                    print(f"    → {first_line}")
-            print()
+                    # Print full description, indented
+                    for line in tool.description.strip().splitlines():
+                        print(f"    {line}")
+                # Print input schema parameters
+                schema = tool.inputSchema or {}
+                props = schema.get("properties", {})
+                required = set(schema.get("required", []))
+                if props:
+                    print(f"\n    Arguments:")
+                    for param, meta in props.items():
+                        req_marker = " [required]" if param in required else " [optional]"
+                        ptype = meta.get("type", "any")
+                        default = f", default={meta['default']!r}" if "default" in meta else ""
+                        desc = meta.get("description", "")
+                        print(f"      {param}{req_marker}  ({ptype}{default})")
+                        if desc:
+                            print(f"        {desc}")
+                print()
+            print("=" * 60)
 
 
 def parse_args(raw_args: list[str]) -> dict:
