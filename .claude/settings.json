@@ -1,0 +1,39 @@
+{
+  "mcpServers": {
+    "jira": {
+      "command": "python",
+      "args": ["-m", "mcp_jira.server"],
+      "cwd": "/opt/smart-devops/mcp_servers"
+    },
+    "jenkins": {
+      "command": "python",
+      "args": ["-m", "mcp_jenkins.server"],
+      "cwd": "/opt/smart-devops/mcp_servers"
+    },
+    "nexus": {
+      "command": "python",
+      "args": ["-m", "mcp_nexus.server"],
+      "cwd": "/opt/smart-devops/mcp_servers"
+    },
+    "bitbucket": {
+      "command": "python",
+      "args": ["-m", "mcp_bitbucket.server"],
+      "cwd": "/opt/smart-devops/mcp_servers"
+    },
+    "sonarqube": {
+      "command": "python",
+      "args": ["-m", "mcp_sonarqube.server"],
+      "cwd": "/opt/smart-devops/mcp_servers"
+    },
+    "coverity": {
+      "command": "python",
+      "args": ["-m", "mcp_coverity.server"],
+      "cwd": "/opt/smart-devops/mcp_servers"
+    },
+    "blackduck": {
+      "command": "python",
+      "args": ["-m", "mcp_blackduck.server"],
+      "cwd": "/opt/smart-devops/mcp_servers"
+    }
+  }
+}

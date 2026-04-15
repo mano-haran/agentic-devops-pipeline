@@ -1,0 +1,24 @@
+# Secrets — never commit
+.env
+*.env
+
+# Pipeline state files (runtime, per-execution)
+state/*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.eggs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# macOS
+.DS_Store

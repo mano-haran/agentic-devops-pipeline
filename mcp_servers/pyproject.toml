@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "smart-devops-mcp-servers"
+version = "1.0.0"
+description = "MCP servers for Smart DevOps CI/CD pipeline orchestration"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.2.0",
+    "httpx>=0.27.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+    "anyio>=4.0.0",
+]
+
+[project.scripts]
+mcp-jira       = "mcp_jira.server:main"
+mcp-jenkins    = "mcp_jenkins.server:main"
+mcp-nexus      = "mcp_nexus.server:main"
+mcp-bitbucket  = "mcp_bitbucket.server:main"
+mcp-sonarqube  = "mcp_sonarqube.server:main"
+mcp-coverity   = "mcp_coverity.server:main"
+mcp-blackduck  = "mcp_blackduck.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "shared",
+    "mcp_jira",
+    "mcp_jenkins",
+    "mcp_nexus",
+    "mcp_bitbucket",
+    "mcp_sonarqube",
+    "mcp_coverity",
+    "mcp_blackduck",
+]
