@@ -8,20 +8,26 @@ COUNTRY_CODES = [
 
 
 async def ask_text_field(step: str, title: str, icon: str, hint: str, example: str) -> str | None:
-    """Show a labelled element then capture a text answer via AskElementMessage."""
-    label_el = cl.Text(
-        name=f"label_{step}",
-        content=(
-            f"{icon}  {title}\n"
-            f"{'─' * 40}\n"
-            f"{hint}\n"
-            f"Example: {example}"
-        ),
-        display="inline",
-    )
-    res = await cl.AskElementMessage(
-        content=f"**Step {step}**  — {title}",
-        elements=[label_el],
+    """Display a labelled hint card, then capture a text answer."""
+    # Show the field description as an inline element card
+    await cl.Message(
+        content=f"**Step {step}** — {icon} **{title}**",
+        elements=[
+            cl.Text(
+                name=f"label_{step}",
+                content=(
+                    f"{icon}  {title}\n"
+                    f"{'─' * 40}\n"
+                    f"{hint}\n"
+                    f"Example: {example}"
+                ),
+                display="inline",
+            )
+        ],
+    ).send()
+
+    res = await cl.AskUserMessage(
+        content="Type your answer below and press Enter:",
         timeout=300,
         raise_on_timeout=False,
     ).send()
