@@ -1,0 +1,13 @@
+[project]
+# Whether to enable telemetry (default: true). No personal data is collected.
+enable_telemetry = false
+
+[features]
+# Show the prompt playground
+prompt_playground = false
+
+[UI]
+name = "DevOps Pipeline Trigger"
+description = "Configure and trigger your agentic DevOps deployment pipeline"
+# Large size gives more room for action button rows
+default_collapse_content = false
