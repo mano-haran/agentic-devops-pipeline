@@ -6,109 +6,75 @@ COUNTRY_CODES = [
     "NZ", "SG", "UK", "US", "ZA",
 ]
 
+_FIELDS = [
+    {
+        "id": "bitbucket_url",
+        "label": "Bitbucket Repository URL",
+        "type": "text",
+        "placeholder": "https://bitbucket.company.com/projects/PROJ/repos/my-service",
+        "required": True,
+    },
+    {
+        "id": "branch",
+        "label": "Branch Name",
+        "type": "text",
+        "placeholder": "main  |  develop  |  release/2.0.0",
+        "value": "main",
+    },
+    {
+        "id": "jira_key",
+        "label": "Jira Issue Key",
+        "type": "text",
+        "placeholder": "PROJ-1234",
+        "required": True,
+    },
+    {
+        "id": "project_type",
+        "label": "Project Type",
+        "type": "select",
+        "options": ["MS", "MFE"],
+        "value": "MS",
+        "required": True,
+    },
+    {
+        "id": "country_code",
+        "label": "Country Code",
+        "type": "select",
+        "options": COUNTRY_CODES,
+        "value": "US",
+        "required": True,
+    },
+]
 
-async def ask_text_field(step: str, title: str, icon: str, hint: str, example: str) -> str | None:
-    """Show a labelled element then capture a text answer via AskElementMessage."""
-    label_el = cl.Text(
-        name=f"label_{step}",
-        content=(
-            f"{icon}  {title}\n"
-            f"{'─' * 40}\n"
-            f"{hint}\n"
-            f"Example: {example}"
-        ),
+
+async def show_form() -> None:
+    element = cl.CustomElement(
+        name="PipelineForm",
         display="inline",
+        props={"fields": _FIELDS},
     )
     res = await cl.AskElementMessage(
-        content=f"**Step {step}**  — {title}",
-        elements=[label_el],
-        timeout=300,
+        content="Please fill in your pipeline configuration:",
+        element=element,
+        timeout=600,
         raise_on_timeout=False,
     ).send()
-    return res["output"].strip() if res else None
+
+    if res and res.get("submitted"):
+        await _show_summary(res)
+    elif res is None:
+        await cl.Message(
+            content="⏰ Timed out. Type **`start`** to try again."
+        ).send()
+    else:
+        await cl.Message(
+            content="Cancelled. Type **`start`** to try again."
+        ).send()
 
 
-async def ask_action_field(step: str, title: str, choices: list[tuple[str, str]]) -> str | None:
-    """Show labelled action buttons and return the clicked value."""
-    actions = [
-        cl.Action(name=f"choice_{step}", value=val, label=label)
-        for val, label in choices
-    ]
-    res = await cl.AskActionMessage(
-        content=f"**Step {step}**  — {title}",
-        actions=actions,
-        timeout=300,
-        raise_on_timeout=False,
-    ).send()
-    return res["value"] if res else None
-
-
-async def run_form() -> None:
-    config: dict[str, str] = {}
-
-    # ── Step 1: Bitbucket URL ──────────────────────────────────────────────
-    val = await ask_text_field(
-        "1 / 5", "Bitbucket Repository URL", "🔗",
-        "Full URL of the Bitbucket repository to deploy.",
-        "https://bitbucket.company.com/projects/PROJ/repos/my-service",
-    )
-    if val is None:
-        await _timeout_msg()
-        return
-    config["bitbucket_url"] = val
-
-    # ── Step 2: Branch ────────────────────────────────────────────────────
-    val = await ask_text_field(
-        "2 / 5", "Branch Name", "🌿",
-        "Git branch that will be built and deployed.",
-        "main  |  develop  |  release/2.1.0",
-    )
-    if val is None:
-        await _timeout_msg()
-        return
-    config["branch"] = val
-
-    # ── Step 3: Jira Key ──────────────────────────────────────────────────
-    val = await ask_text_field(
-        "3 / 5", "Jira Issue Key", "🎫",
-        "Jira ticket that tracks this deployment.",
-        "PROJ-1234  |  DEPLOY-567",
-    )
-    if val is None:
-        await _timeout_msg()
-        return
-    config["jira_key"] = val.upper()
-
-    # ── Step 4: Project Type (MS / MFE) ───────────────────────────────────
-    val = await ask_action_field(
-        "4 / 5", "🏗️  Project Type — choose one:",
-        [
-            ("MS",  "🔷  MS  — Microservice"),
-            ("MFE", "🔶  MFE — Micro Frontend"),
-        ],
-    )
-    if val is None:
-        await _timeout_msg()
-        return
-    config["project_type"] = val
-
-    # ── Step 5: Country Code ──────────────────────────────────────────────
-    val = await ask_action_field(
-        "5 / 5", "🌐  Country Code — select target region:",
-        [(c, f"🌍  {c}") for c in COUNTRY_CODES],
-    )
-    if val is None:
-        await _timeout_msg()
-        return
-    config["country_code"] = val
-
-    await show_summary(config)
-
-
-async def show_summary(config: dict[str, str]) -> None:
-    """Print a markdown table of all captured values."""
+async def _show_summary(data: dict) -> None:
     rows = "\n".join(
-        f"| {icon} **{label}** | `{config[key]}` |"
+        f"| {icon} **{label}** | `{data.get(key, '—')}` |"
         for icon, label, key in [
             ("🔗", "Bitbucket URL",  "bitbucket_url"),
             ("🌿", "Branch",         "branch"),
@@ -117,23 +83,15 @@ async def show_summary(config: dict[str, str]) -> None:
             ("🌐", "Country Code",   "country_code"),
         ]
     )
-
     await cl.Message(
         content=(
             "## ✅  Pipeline Configuration Captured\n\n"
-            "Here is a summary of what you entered:\n\n"
             "| Field | Value |\n"
             "|:------|:------|\n"
             f"{rows}\n\n"
-            "Your configuration has been recorded. 🎉\n\n"
+            "Your pipeline configuration has been recorded. 🎉\n\n"
             "Type **`start`** to configure another pipeline."
         )
-    ).send()
-
-
-async def _timeout_msg() -> None:
-    await cl.Message(
-        content="⏰ No response received. Type **`start`** to try again."
     ).send()
 
 
@@ -142,23 +100,17 @@ async def on_chat_start() -> None:
     await cl.Message(
         content=(
             "## 🚀  Agentic DevOps Pipeline\n\n"
-            "Welcome! I'll walk you through **5 quick steps** to capture your "
-            "pipeline configuration.\n\n"
-            "Let's begin ↓"
+            "Fill in the form below to configure your deployment pipeline."
         )
     ).send()
-    await run_form()
+    await show_form()
 
 
 @cl.on_message
 async def on_message(message: cl.Message) -> None:
-    cmd = message.content.lower().strip()
-    if cmd in {"start", "restart", "new", "begin", "reset"}:
-        await run_form()
+    if message.content.lower().strip() in {"start", "restart", "new", "begin", "reset"}:
+        await show_form()
     else:
         await cl.Message(
-            content=(
-                "I'm the **DevOps Pipeline Trigger** assistant.\n\n"
-                "Type **`start`** to fill in a new pipeline configuration."
-            )
+            content="Type **`start`** to open the pipeline configuration form."
         ).send()
